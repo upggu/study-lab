@@ -1,0 +1,17 @@
+# kagent-lab 12장 — Substrate A/B fixture의 상주(Deployment) 쪽. sandbox-echo와 name·kind만 다르다.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: resident-echo
+  namespace: kagent
+  labels:
+    study.upggu.com/fixture: substrate-ab
+spec:
+  type: Declarative
+  description: Resident side of the Substrate A/B fixture.
+  declarative:
+    runtime: go
+    modelConfig: default-model-config
+    systemMessage: |-
+      You are the A/B runtime fixture.
+      Answer in one short sentence and do not use tools.

@@ -1,0 +1,27 @@
+# kagent-lab 9장 — kind node에 적재한 lab-byo:lab image를 BYO Agent로 배포 (OpenAI 직접 연결).
+# imagePullPolicy: IfNotPresent는 kind 전용이다. 온프렘에서는 registry digest와 조직 pull policy를 쓴다.
+# v0.9.9 SharedDeploymentSpec에는 envFrom이 없어 Secret key를 env[].valueFrom으로 하나씩 연결한다.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: lab-byo
+  namespace: kagent
+spec:
+  type: BYO
+  byo:
+    deployment:
+      image: lab-byo:lab
+      imagePullPolicy: IfNotPresent
+      env:
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: lab-byo-model
+              key: OPENAI_API_KEY
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: "1"
+          memory: 1Gi

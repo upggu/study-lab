@@ -1,0 +1,36 @@
+# kagent-lab 9장 — lab-byo:lab image를 BYO Agent로 배포 (사내 LiteLLM gateway 연결).
+# byo/litellm-create-model.py 로 generated code의 create_model()을 바꾼 image여야 한다.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: lab-byo
+  namespace: kagent
+spec:
+  type: BYO
+  byo:
+    deployment:
+      image: lab-byo:lab
+      imagePullPolicy: IfNotPresent
+      env:
+        - name: LITELLM_MODEL
+          valueFrom:
+            secretKeyRef:
+              name: lab-byo-model
+              key: LITELLM_MODEL
+        - name: LITELLM_BASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: lab-byo-model
+              key: LITELLM_BASE_URL
+        - name: LITELLM_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: lab-byo-model
+              key: LITELLM_API_KEY
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: "1"
+          memory: 1Gi

@@ -1,0 +1,70 @@
+# partner-idp realm — 상대 부서 IdP의 대역
+#
+# 실제 환경에서 이 파일은 우리 것이 아니다. AD FS를 운영하는 팀이 자기 콘솔에서 하는 일, 즉
+# "이 relying party(우리 Keycloak)를 등록하고 client ID·secret을 발급하며, 어떤 claim을 내보낼지
+# 정하는 것"을 Compose 안의 두 번째 realm으로 흉내 낸다. 우리가 받는 것은 clientId·clientSecret과
+# issuer뿐이고, 우리가 주는 것은 콜백 주소(redirectUris)뿐이다.
+#
+# 사용자 carol은 partner-admins group에 있고 dave는 없다. 이 group이 ID token의 groups claim으로
+# 나가고, study realm의 mapper가 그 claim을 api-admin role로 바꾼다 (realm/study/broker.yaml).
+
+realm: partner-idp
+displayName: Partner SSO (stand-in for the other team's IdP)
+enabled: true
+sslRequired: external
+
+groups:
+  - name: partner-admins
+
+users:
+  - username: carol
+    enabled: true
+    firstName: Carol
+    lastName: Partner
+    email: carol@partner.example
+    emailVerified: true
+    groups:
+      - /partner-admins
+    credentials:
+      - type: password
+        value: "$(file:UTF-8:/run/secrets/partner-carol-password)"
+        temporary: false
+  - username: dave
+    enabled: true
+    firstName: Dave
+    lastName: Partner
+    email: dave@partner.example
+    emailVerified: true
+    credentials:
+      - type: password
+        value: "$(file:UTF-8:/run/secrets/partner-dave-password)"
+        temporary: false
+
+clients:
+  # 상대 부서 입장에서 "우리 Keycloak"은 등록된 relying party 하나다.
+  - clientId: study-broker
+    name: study realm broker (registered relying party)
+    enabled: true
+    protocol: openid-connect
+    publicClient: false
+    clientAuthenticatorType: client-secret
+    secret: "$(file:UTF-8:/run/secrets/study-broker-client-secret)"
+    standardFlowEnabled: true
+    implicitFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+    redirectUris:
+      - https://keycloak.keycloak.test:30080/realms/study/broker/partner-idp/endpoint
+    attributes:
+      pkce.code.challenge.method: S256
+    protocolMappers:
+      # 상대 IdP가 내보내기로 한 claim. AD FS라면 claim issuance rule에 해당한다.
+      - name: groups
+        protocol: openid-connect
+        protocolMapper: oidc-group-membership-mapper
+        config:
+          claim.name: groups
+          full.path: "true"
+          id.token.claim: "true"
+          access.token.claim: "true"
+          userinfo.token.claim: "true"

@@ -1,0 +1,16 @@
+# dependencies
+node_modules/
+
+# Python virtualenvs and bytecode
+.venv/
+__pycache__/
+
+# environment variables
+.env
+.env.*
+
+# Keycloak lab private keys, passwords, downloaded tools and verification output
+/keycloak/.state/
+
+# macOS
+.DS_Store

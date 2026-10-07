@@ -1,0 +1,104 @@
+# study realm — 단계 api  (diff realm/study/app-b.yaml realm/study/api.yaml)
+#
+# 추가: API 권한에 필요한 네 가지. 서로 다른 자리에 있다는 점이 핵심이다.
+#   1. roles.realm            realm role 두 개 (app-user, api-admin). 권한의 "이름"만 정의한다.
+#   2. users[].realmRoles     local-user에게 app-user만 준다. api-admin은 주지 않으므로 /api/admin은 403이어야 한다.
+#   3. clients[] lab-api      token을 받기만 하는 bearer-only client. 로그인 flow가 없다.
+#   4. app-a/app-b의 protocolMappers  access token에 aud=lab-api 를 싣는 audience mapper.
+#      이것이 없으면 API가 "나를 위한 token이 아니다"라며 401을 낸다.
+
+realm: study
+displayName: Keycloak Study Lab
+enabled: true
+sslRequired: external
+registrationAllowed: false
+resetPasswordAllowed: false
+rememberMe: false
+
+roles:
+  realm:
+    - name: app-user
+      description: 앱과 API의 일반 기능 (/api/user)
+    - name: api-admin
+      description: API 관리 기능 (/api/admin)
+
+users:
+  - username: local-user
+    enabled: true
+    firstName: Local
+    lastName: User
+    email: local-user@keycloak.test
+    emailVerified: true
+    realmRoles:
+      - default-roles-study
+      - app-user
+    credentials:
+      - type: password
+        value: "$(file:UTF-8:/run/secrets/local-user-password)"
+        temporary: false
+
+clients:
+  - clientId: app-a
+    name: app-a (Keycloak Lab App A)
+    enabled: true
+    protocol: openid-connect
+    publicClient: false
+    clientAuthenticatorType: client-secret
+    secret: "$(file:UTF-8:/run/secrets/app-a-client-secret)"
+    standardFlowEnabled: true
+    implicitFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+    redirectUris:
+      - https://app-a.keycloak.test:30081/callback
+    webOrigins:
+      - https://app-a.keycloak.test:30081
+    attributes:
+      pkce.code.challenge.method: S256
+    protocolMappers:
+      - name: lab-api-audience
+        protocol: openid-connect
+        protocolMapper: oidc-audience-mapper
+        config:
+          included.client.audience: lab-api
+          access.token.claim: "true"
+          id.token.claim: "false"
+          introspection.token.claim: "true"
+
+  - clientId: app-b
+    name: app-b (Keycloak Lab App B)
+    enabled: true
+    protocol: openid-connect
+    publicClient: false
+    clientAuthenticatorType: client-secret
+    secret: "$(file:UTF-8:/run/secrets/app-b-client-secret)"
+    standardFlowEnabled: true
+    implicitFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+    redirectUris:
+      - https://app-b.keycloak.test:30082/callback
+    webOrigins:
+      - https://app-b.keycloak.test:30082
+    attributes:
+      pkce.code.challenge.method: S256
+    protocolMappers:
+      - name: lab-api-audience
+        protocol: openid-connect
+        protocolMapper: oidc-audience-mapper
+        config:
+          included.client.audience: lab-api
+          access.token.claim: "true"
+          id.token.claim: "false"
+          introspection.token.claim: "true"
+
+  - clientId: lab-api
+    name: lab-api (Keycloak Lab API)
+    enabled: true
+    protocol: openid-connect
+    bearerOnly: true
+    publicClient: false
+    standardFlowEnabled: false
+    implicitFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false

@@ -1,0 +1,341 @@
+# Keycloak lab. Long-running services: samba (AD DS stand-in), postgres, keycloak, app-a, app-b, api.
+# One-off tools (profile "tools", run by lab.sh): config = keycloak-config-cli applying realm/*.yaml,
+# check = scripted login checks and LDAP sync. See README.md for the learning order.
+name: keycloak-lab
+
+# Local image builds forward the host shell's proxy settings (null args resolve from the
+# environment and are omitted when unset) and receive the optional corporate proxy CA prepared by
+# tools/prepare-state.sh as a BuildKit secret. An empty secret file means "no proxy CA".
+x-build-proxy-args: &build-proxy-args
+  HTTP_PROXY:
+  HTTPS_PROXY:
+  NO_PROXY:
+  http_proxy:
+  https_proxy:
+  no_proxy:
+
+x-app-build: &app-build
+  context: ./app
+  args:
+    <<: *build-proxy-args
+    NODE_IMAGE: node:24.21.0-bookworm-slim@sha256:2fe369e969550cde8e867afc3fe370b260140cab4a23d467074295b42163d553
+  secrets:
+    - corporate-proxy-ca
+
+x-app-common: &app-common
+  image: keycloak-lab-app:node24
+  build: *app-build
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  tmpfs: ["/tmp:size=16m,mode=1777"]
+  cpus: 0.25
+  mem_limit: 256m
+  stop_grace_period: 15s
+
+services:
+  # ---- stand-in for the directory team's AD DS -------------------------------------------------
+  samba:
+    image: keycloak-lab-samba:4.19.5-ubuntu24.04
+    build:
+      context: ./samba
+      args:
+        <<: *build-proxy-args
+        UBUNTU_IMAGE: ubuntu:24.04@sha256:224a1869083a311ef3f13648a154ba79832fbef6364d31493642ca03082da254
+        SAMBA_PACKAGE_VERSION: 2:4.19.5+dfsg-4ubuntu9.7
+      secrets:
+        - corporate-proxy-ca
+    container_name: keycloak-lab-samba
+    hostname: dc1
+    domainname: ad.keycloak.test
+    environment:
+      SAMBA_REALM: AD.KEYCLOAK.TEST
+      SAMBA_DOMAIN: KEYCLOAK
+      SAMBA_HOST_NAME: DC1
+      SAMBA_DNS_FORWARDER: 127.0.0.11
+    cap_add: [SYS_ADMIN]   # SYSVOL ACLs need security.* xattrs
+    secrets: [samba-admin-password, samba-alice-password, samba-bob-password, samba-tls-key]
+    volumes:
+      - keycloak-lab-samba-dc:/var/lib/samba
+      - ./.state/directory-ca/ca.crt:/run/keycloak-lab/certs/ca.crt:ro
+      - ./.state/directory-ca/dc1.crt:/run/keycloak-lab/certs/dc1.crt:ro
+    networks:
+      keycloak-lab:
+        ipv4_address: 172.30.0.10
+        aliases: [dc1.ad.keycloak.test]
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          LDAPTLS_CACERT=/run/keycloak-lab/certs/ca.crt
+          ldapsearch -LLL -x -H ldaps://dc1.ad.keycloak.test:636
+          -D Administrator@AD.KEYCLOAK.TEST -w "$$(cat /run/secrets/samba-admin-password)"
+          -b '' -s base defaultNamingContext >/dev/null
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 20s
+    cpus: 1.0
+    mem_limit: 1g
+    stop_grace_period: 30s
+
+  # ---- Keycloak and its database ----------------------------------------------------------------
+  postgres:
+    image: postgres:18.6-bookworm@sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b36a54a32df645cbd7e1af
+    container_name: keycloak-lab-postgres
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD_FILE: /run/secrets/keycloak-db-password
+    secrets: [keycloak-db-password]
+    volumes:
+      - keycloak-lab-keycloak-db:/var/lib/postgresql
+    networks:
+      keycloak-lab:
+        aliases: [postgres]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready --username=keycloak --dbname=keycloak]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 10s
+    cpus: 0.5
+    mem_limit: 512m
+    stop_grace_period: 30s
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.5.5@sha256:a7b0cb7a43a1235a61872883414d3f1d9a3ceac9df6e5907bd12202778a6265c
+    container_name: keycloak-lab-keycloak
+    entrypoint: [/opt/keycloak/bin/keycloak-lab-entrypoint]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL_HOST: postgres
+      KC_DB_URL_DATABASE: keycloak
+      KC_DB_USERNAME: keycloak
+      # One issuer for browser and containers: https://keycloak.keycloak.test:30080/realms/<realm>
+      KC_HOSTNAME: https://keycloak.keycloak.test:30080
+      KC_HTTPS_PORT: "30080"
+      KC_HTTPS_CERTIFICATE_FILE: /run/keycloak-lab/certs/keycloak.crt
+      KC_HTTPS_CERTIFICATE_KEY_FILE: /run/secrets/keycloak-https-key
+      # Trusts the directory CA (LDAPS to Samba) and the web CA (study realm brokering to partner-idp).
+      KC_TRUSTSTORE_PATHS: /opt/keycloak/conf/truststores
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "true"
+      KC_HTTP_MANAGEMENT_SCHEME: http
+      KC_BOOTSTRAP_ADMIN_USERNAME: lab-admin
+    secrets: [keycloak-db-password, keycloak-admin-password, keycloak-https-key]
+    volumes:
+      - ./tools/keycloak-entrypoint.sh:/opt/keycloak/bin/keycloak-lab-entrypoint:ro
+      - ./.state/web-ca/keycloak.crt:/run/keycloak-lab/certs/keycloak.crt:ro
+      - ./.state/directory-ca/ca.crt:/opt/keycloak/conf/truststores/directory-ca.crt:ro
+      - ./.state/web-ca/ca.crt:/opt/keycloak/conf/truststores/web-ca.crt:ro
+    networks:
+      keycloak-lab:
+        ipv4_address: 172.30.0.20
+        aliases: [keycloak.keycloak.test]
+    ports:
+      - { name: keycloak-https, target: 30080, published: "30080", host_ip: 127.0.0.1, protocol: tcp }
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test:
+        - CMD
+        - /bin/bash
+        - -ec
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/9000;
+          printf 'HEAD /health/ready HTTP/1.0\r\n\r\n' >&3;
+          grep -q 'HTTP/1.0 200' <&3
+      interval: 5s
+      timeout: 5s
+      retries: 36
+      start_period: 40s
+    cpus: 1.5
+    mem_limit: 2g
+    stop_grace_period: 30s
+
+  # ---- our applications --------------------------------------------------------------------------
+  app-a:
+    <<: *app-common
+    container_name: keycloak-lab-app-a
+    environment:
+      APP_NAME: App A
+      APP_ORIGIN: https://app-a.keycloak.test:30081
+      APP_PORT: "30081"
+      OIDC_ISSUER: https://keycloak.keycloak.test:30080/realms/study
+      OIDC_CLIENT_ID: app-a
+      OIDC_CLIENT_SECRET_FILE: /run/secrets/app-a-client-secret
+      SESSION_SECRET_FILE: /run/secrets/app-a-session-secret
+      SESSION_COOKIE_NAME: app-a.sid
+      HTTPS_CERTIFICATE_FILE: /run/keycloak-lab/certs/app-a.crt
+      HTTPS_KEY_FILE: /run/secrets/app-a-https-key
+      API_ORIGIN: http://api:3000
+      NODE_EXTRA_CA_CERTS: /run/keycloak-lab/web-ca/ca.crt
+    secrets: [app-a-client-secret, app-a-session-secret, app-a-https-key]
+    volumes:
+      - ./.state/web-ca/ca.crt:/run/keycloak-lab/web-ca/ca.crt:ro
+      - ./.state/web-ca/app-a.crt:/run/keycloak-lab/certs/app-a.crt:ro
+    networks:
+      keycloak-lab:
+        aliases: [app-a.keycloak.test]
+    ports:
+      - { name: app-a-https, target: 30081, published: "30081", host_ip: 127.0.0.1, protocol: tcp }
+    depends_on:
+      keycloak: { condition: service_healthy }
+    healthcheck:
+      test: [CMD, node, healthcheck.mjs]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 10s
+
+  app-b:
+    <<: *app-common
+    container_name: keycloak-lab-app-b
+    environment:
+      APP_NAME: App B
+      APP_ORIGIN: https://app-b.keycloak.test:30082
+      APP_PORT: "30082"
+      OIDC_ISSUER: https://keycloak.keycloak.test:30080/realms/study
+      OIDC_CLIENT_ID: app-b
+      OIDC_CLIENT_SECRET_FILE: /run/secrets/app-b-client-secret
+      SESSION_SECRET_FILE: /run/secrets/app-b-session-secret
+      SESSION_COOKIE_NAME: app-b.sid
+      HTTPS_CERTIFICATE_FILE: /run/keycloak-lab/certs/app-b.crt
+      HTTPS_KEY_FILE: /run/secrets/app-b-https-key
+      API_ORIGIN: http://api:3000
+      NODE_EXTRA_CA_CERTS: /run/keycloak-lab/web-ca/ca.crt
+    secrets: [app-b-client-secret, app-b-session-secret, app-b-https-key]
+    volumes:
+      - ./.state/web-ca/ca.crt:/run/keycloak-lab/web-ca/ca.crt:ro
+      - ./.state/web-ca/app-b.crt:/run/keycloak-lab/certs/app-b.crt:ro
+    networks:
+      keycloak-lab:
+        aliases: [app-b.keycloak.test]
+    ports:
+      - { name: app-b-https, target: 30082, published: "30082", host_ip: 127.0.0.1, protocol: tcp }
+    depends_on:
+      keycloak: { condition: service_healthy }
+    healthcheck:
+      test: [CMD, node, healthcheck.mjs]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 10s
+
+  api:
+    <<: *app-common
+    container_name: keycloak-lab-api
+    command: [node, api.mjs]
+    environment:
+      API_PORT: "3000"
+      OIDC_ISSUER: https://keycloak.keycloak.test:30080/realms/study
+      OIDC_AUDIENCE: lab-api
+      NODE_EXTRA_CA_CERTS: /run/keycloak-lab/web-ca/ca.crt
+    volumes:
+      - ./.state/web-ca/ca.crt:/run/keycloak-lab/web-ca/ca.crt:ro
+    networks:
+      keycloak-lab:
+        aliases: [api]
+    depends_on:
+      keycloak: { condition: service_healthy }
+    healthcheck:
+      test: [CMD, node, api-healthcheck.mjs]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 10s
+
+  # ---- one-off tools (lab.sh runs these with `compose run`) ---------------------------------------
+  config:
+    # keycloak-config-cli: applies realm/*.yaml through the Admin REST API. lab.sh sets
+    # IMPORT_FILES_LOCATIONS to the stage file(s). Secrets referenced as $(file:UTF-8:/run/secrets/…)
+    # in the YAML are mounted below; the admin password arrives via Spring's configtree.
+    image: adorsys/keycloak-config-cli:6.5.1-26.5.5@sha256:0955d98c8a341898b7aa177477edf8a1e90569ae50bbe7598141c1270b773274
+    profiles: [tools]
+    entrypoint: [/bin/sh, /lab/config-cli-entrypoint.sh]
+    environment:
+      KEYCLOAK_URL: https://keycloak.keycloak.test:30080
+      KEYCLOAK_USER: lab-admin
+      SPRING_CONFIG_IMPORT: configtree:/run/config-cli/
+      KEYCLOAK_AVAILABILITYCHECK_ENABLED: "true"
+      KEYCLOAK_TLS_TRUSTSTOREPATH: /tmp/web-ca.p12
+      KEYCLOAK_TLS_TRUSTSTOREPASSWORD: keycloak-lab-web-ca
+      IMPORT_VARSUBSTITUTION_ENABLED: "true"
+      IMPORT_CACHE_ENABLED: "false"     # always reconcile, even if the file is unchanged
+      IMPORT_FILES_LOCATIONS: file:/config/study/base.yaml
+      JAVA_OPTS: -Xmx384m
+      LOGGING_LEVEL_DE_ADORSYS_KEYCLOAK_CONFIG_SERVICE: DEBUG   # show each created/updated object
+    secrets:
+      - source: keycloak-admin-password
+        target: /run/config-cli/keycloak.password
+      - local-user-password
+      - app-a-client-secret
+      - app-b-client-secret
+      - samba-admin-password
+      - study-broker-client-secret
+      - partner-carol-password
+      - partner-dave-password
+    volumes:
+      - ./realm:/config:ro
+      - ./tools/config-cli-entrypoint.sh:/lab/config-cli-entrypoint.sh:ro
+      - ./.state/web-ca/ca.crt:/lab/web-ca.crt:ro
+    read_only: true
+    tmpfs: ["/tmp:size=32m,mode=1777"]
+    networks: [keycloak-lab]
+    cpus: 1.0
+    mem_limit: 768m
+
+  check:
+    # Scripted browser (checks/login-check.mjs) and LDAP sync (checks/sync.mjs).
+    <<: *app-common
+    profiles: [tools]
+    entrypoint: [node]
+    command: [/lab/checks/login-check.mjs]
+    environment:
+      NODE_EXTRA_CA_CERTS: /run/keycloak-lab/web-ca/ca.crt
+    secrets:
+      - local-user-password
+      - samba-alice-password
+      - samba-bob-password
+      - partner-carol-password
+      - partner-dave-password
+      - keycloak-admin-password
+    volumes:
+      - ./checks:/lab/checks:ro
+      - ./.state/web-ca/ca.crt:/run/keycloak-lab/web-ca/ca.crt:ro
+    networks: [keycloak-lab]
+
+networks:
+  keycloak-lab:
+    name: keycloak-lab
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+volumes:
+  keycloak-lab-samba-dc:
+    name: keycloak-lab-samba-dc
+  keycloak-lab-keycloak-db:
+    name: keycloak-lab-keycloak-db
+
+secrets:
+  corporate-proxy-ca: { file: ./.state/build/corporate-proxy-ca.crt }
+  samba-admin-password: { file: ./.state/secrets/samba-admin-password }
+  samba-alice-password: { file: ./.state/secrets/samba-alice-password }
+  samba-bob-password: { file: ./.state/secrets/samba-bob-password }
+  samba-tls-key: { file: ./.state/directory-ca/dc1.key }
+  keycloak-db-password: { file: ./.state/secrets/keycloak-db-password }
+  keycloak-admin-password: { file: ./.state/secrets/keycloak-admin-password }
+  keycloak-https-key: { file: ./.state/web-ca/keycloak.key }
+  local-user-password: { file: ./.state/secrets/local-user-password }
+  app-a-client-secret: { file: ./.state/secrets/app-a-client-secret }
+  app-a-session-secret: { file: ./.state/secrets/app-a-session-secret }
+  app-a-https-key: { file: ./.state/web-ca/app-a.key }
+  app-b-client-secret: { file: ./.state/secrets/app-b-client-secret }
+  app-b-session-secret: { file: ./.state/secrets/app-b-session-secret }
+  app-b-https-key: { file: ./.state/web-ca/app-b.key }
+  partner-carol-password: { file: ./.state/secrets/partner-carol-password }
+  partner-dave-password: { file: ./.state/secrets/partner-dave-password }
+  study-broker-client-secret: { file: ./.state/secrets/study-broker-client-secret }

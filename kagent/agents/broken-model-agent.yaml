@@ -1,0 +1,13 @@
+# kagent-lab 6장 — 존재하지 않는 ModelConfig를 참조하는 의도적 실패 fixture. 진단 뒤 삭제한다.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: broken-model-agent
+  namespace: kagent
+spec:
+  description: Intentionally broken agent for condition inspection.
+  type: Declarative
+  declarative:
+    runtime: go
+    modelConfig: model-config-does-not-exist
+    systemMessage: You are intentionally misconfigured for a lab.

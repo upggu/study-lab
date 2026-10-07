@@ -1,0 +1,227 @@
+# study realm — 단계 groups  (diff realm/study/ldap.yaml realm/study/groups.yaml)
+#
+# 추가: 디렉터리 group이 API 권한이 되기까지의 세 경계. 각각 다른 자리에 선언한다.
+#   1. groups[]                      Keycloak group 두 개와 그 group이 상속시킬 realm role.
+#                                    (group과 role의 연결은 우리 realm의 결정이라 여기서 선언한다)
+#   2. samba-ad 의 subComponents     LDAP group mapper. 디렉터리의 app-users·api-admins group과 member를
+#                                    위 Keycloak group의 membership으로 가져온다. 가져오기 자체는 ./lab.sh sync.
+#   3. app-a/app-b 의 protocolMappers   Group Membership mapper. Keycloak group 경로를 access token의
+#                                    groups claim으로 싣는다. API는 이 claim이 아니라 realm_access.roles로
+#                                    인가하므로, groups claim을 꺼도 role이 남아 있으면 200이 유지된다.
+
+realm: study
+displayName: Keycloak Study Lab
+enabled: true
+sslRequired: external
+registrationAllowed: false
+resetPasswordAllowed: false
+rememberMe: false
+
+roles:
+  realm:
+    - name: app-user
+      description: 앱과 API의 일반 기능 (/api/user)
+    - name: api-admin
+      description: API 관리 기능 (/api/admin)
+
+groups:
+  - name: app-users
+    realmRoles:
+      - app-user
+  - name: api-admins
+    realmRoles:
+      - api-admin
+
+users:
+  - username: local-user
+    enabled: true
+    firstName: Local
+    lastName: User
+    email: local-user@keycloak.test
+    emailVerified: true
+    realmRoles:
+      - default-roles-study
+      - app-user
+    credentials:
+      - type: password
+        value: "$(file:UTF-8:/run/secrets/local-user-password)"
+        temporary: false
+
+clients:
+  - clientId: app-a
+    name: app-a (Keycloak Lab App A)
+    enabled: true
+    protocol: openid-connect
+    publicClient: false
+    clientAuthenticatorType: client-secret
+    secret: "$(file:UTF-8:/run/secrets/app-a-client-secret)"
+    standardFlowEnabled: true
+    implicitFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+    redirectUris:
+      - https://app-a.keycloak.test:30081/callback
+    webOrigins:
+      - https://app-a.keycloak.test:30081
+    attributes:
+      pkce.code.challenge.method: S256
+    protocolMappers:
+      - name: lab-api-audience
+        protocol: openid-connect
+        protocolMapper: oidc-audience-mapper
+        config:
+          included.client.audience: lab-api
+          access.token.claim: "true"
+          id.token.claim: "false"
+          introspection.token.claim: "true"
+      - name: ldap-groups
+        protocol: openid-connect
+        protocolMapper: oidc-group-membership-mapper
+        config:
+          claim.name: groups
+          full.path: "true"
+          access.token.claim: "true"
+          id.token.claim: "false"
+          userinfo.token.claim: "false"
+          introspection.token.claim: "true"
+
+  - clientId: app-b
+    name: app-b (Keycloak Lab App B)
+    enabled: true
+    protocol: openid-connect
+    publicClient: false
+    clientAuthenticatorType: client-secret
+    secret: "$(file:UTF-8:/run/secrets/app-b-client-secret)"
+    standardFlowEnabled: true
+    implicitFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+    redirectUris:
+      - https://app-b.keycloak.test:30082/callback
+    webOrigins:
+      - https://app-b.keycloak.test:30082
+    attributes:
+      pkce.code.challenge.method: S256
+    protocolMappers:
+      - name: lab-api-audience
+        protocol: openid-connect
+        protocolMapper: oidc-audience-mapper
+        config:
+          included.client.audience: lab-api
+          access.token.claim: "true"
+          id.token.claim: "false"
+          introspection.token.claim: "true"
+      - name: ldap-groups
+        protocol: openid-connect
+        protocolMapper: oidc-group-membership-mapper
+        config:
+          claim.name: groups
+          full.path: "true"
+          access.token.claim: "true"
+          id.token.claim: "false"
+          userinfo.token.claim: "false"
+          introspection.token.claim: "true"
+
+  - clientId: lab-api
+    name: lab-api (Keycloak Lab API)
+    enabled: true
+    protocol: openid-connect
+    bearerOnly: true
+    publicClient: false
+    standardFlowEnabled: false
+    implicitFlowEnabled: false
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: false
+
+components:
+  org.keycloak.storage.UserStorageProvider:
+    - name: samba-ad
+      providerId: ldap
+      config:
+        enabled: ["true"]
+        priority: ["0"]
+        vendor: ["ad"]
+        connectionUrl: ["ldaps://dc1.ad.keycloak.test:636"]
+        useTruststoreSpi: ["always"]
+        startTls: ["false"]
+        authType: ["simple"]
+        bindDn: ["Administrator@AD.KEYCLOAK.TEST"]
+        bindCredential: ["$(file:UTF-8:/run/secrets/samba-admin-password)"]
+        usersDn: ["CN=Users,DC=ad,DC=keycloak,DC=test"]
+        searchScope: ["1"]
+        userObjectClasses: ["person, organizationalPerson, user"]
+        usernameLDAPAttribute: ["sAMAccountName"]
+        rdnLDAPAttribute: ["cn"]
+        uuidLDAPAttribute: ["objectGUID"]
+        editMode: ["READ_ONLY"]
+        importEnabled: ["true"]
+        syncRegistrations: ["false"]
+        fullSyncPeriod: ["-1"]
+        changedSyncPeriod: ["-1"]
+        batchSizeForSync: ["1000"]
+        cachePolicy: ["DEFAULT"]
+        pagination: ["true"]
+        connectionPooling: ["true"]
+        trustEmail: ["false"]
+        validatePasswordPolicy: ["false"]
+        allowKerberosAuthentication: ["false"]
+        useKerberosForPasswordAuthentication: ["false"]
+      subComponents:
+        org.keycloak.storage.ldap.mappers.LDAPStorageMapper:
+          # Keycloak은 LDAP provider를 만들 때 속성 mapper를 자동 생성하지만, config-cli는 파일에 없는
+          # subComponent를 지운다. 그래서 필요한 mapper를 여기 명시한다. 디렉터리 속성 → Keycloak 사용자 필드.
+          - name: username
+            providerId: user-attribute-ldap-mapper
+            config:
+              ldap.attribute: ["sAMAccountName"]
+              user.model.attribute: ["username"]
+              read.only: ["true"]
+              always.read.value.from.ldap: ["false"]
+              is.mandatory.in.ldap: ["true"]
+          - name: first name
+            providerId: user-attribute-ldap-mapper
+            config:
+              ldap.attribute: ["givenName"]
+              user.model.attribute: ["firstName"]
+              read.only: ["true"]
+              always.read.value.from.ldap: ["true"]
+              is.mandatory.in.ldap: ["false"]
+          - name: last name
+            providerId: user-attribute-ldap-mapper
+            config:
+              ldap.attribute: ["sn"]
+              user.model.attribute: ["lastName"]
+              read.only: ["true"]
+              always.read.value.from.ldap: ["true"]
+              is.mandatory.in.ldap: ["false"]
+          - name: email
+            providerId: user-attribute-ldap-mapper
+            config:
+              ldap.attribute: ["mail"]
+              user.model.attribute: ["email"]
+              read.only: ["true"]
+              always.read.value.from.ldap: ["false"]
+              is.mandatory.in.ldap: ["false"]
+          - name: MSAD account controls
+            # AD의 userAccountControl(계정 비활성·만료)을 Keycloak의 enabled 상태로 읽는다.
+            providerId: msad-user-account-control-mapper
+            config:
+              ldap.password.policy.hints.enabled: ["false"]
+          - name: lab-groups
+            providerId: group-ldap-mapper
+            config:
+              mode: ["READ_ONLY"]
+              groups.dn: ["CN=Users,DC=ad,DC=keycloak,DC=test"]
+              groups.ldap.filter: ["(|(cn=app-users)(cn=api-admins))"]
+              group.name.ldap.attribute: ["cn"]
+              group.object.classes: ["group"]
+              groups.path: ["/"]
+              preserve.group.inheritance: ["false"]
+              ignore.missing.groups: ["false"]
+              membership.ldap.attribute: ["member"]
+              membership.attribute.type: ["DN"]
+              membership.user.ldap.attribute: ["sAMAccountName"]
+              memberof.ldap.attribute: ["memberOf"]
+              user.roles.retrieve.strategy: ["LOAD_GROUPS_BY_MEMBER_ATTRIBUTE"]
+              decode.group.uuid.attribute: ["true"]
+              drop.non.existing.groups.during.sync: ["false"]

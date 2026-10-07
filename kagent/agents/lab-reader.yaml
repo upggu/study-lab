@@ -1,0 +1,45 @@
+# kagent-lab 3장 — 조회 tool 둘만 허용한 Declarative Agent.
+# 1장에서 별도 ModelConfig(litellm-default 등)를 만들었다면 modelConfig를 그 이름으로 바꾼다.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: lab-reader
+  namespace: kagent
+spec:
+  description: Read-only lab agent that explains resources in the kagent namespace.
+  type: Declarative
+  declarative:
+    runtime: go
+    modelConfig: default-model-config
+    systemMessage: |-
+      You are a read-only Kubernetes lab assistant.
+
+      Rules:
+      - Inspect resources only in the namespace explicitly requested by the user.
+      - Never claim that you changed, deleted, restarted, or applied a resource.
+      - Use a tool for facts about the current cluster; do not guess.
+      - If a request requires a mutation, explain that this lab agent has no mutation tool.
+      - Summarize the tool evidence before giving a conclusion.
+    tools:
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: kagent-tool-server
+          toolNames:
+            - k8s_get_available_api_resources
+            - k8s_get_resources
+    a2aConfig:
+      skills:
+        - id: inspect-kubernetes-resources
+          name: Inspect Kubernetes resources
+          description: Read and explain Kubernetes resources in a requested namespace.
+          tags:
+            - kubernetes
+            - read-only
+          examples:
+            - List the Pods in the kagent namespace and cite the tool evidence.
+          inputModes:
+            - text
+          outputModes:
+            - text

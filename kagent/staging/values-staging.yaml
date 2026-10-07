@@ -1,0 +1,38 @@
+# kagent-lab 10장 — 온프렘 staging values의 검토 시작점. 회사별 완성 values가 아니다.
+# - bundled PostgreSQL을 끄고 DB URL은 Secret volume(kagent-postgres-url의 url key)에서 읽는다.
+# - controller replica 2 이상이면 kagent가 leader election을 켠다.
+# - rbac.namespaces가 빈 배열이면 cluster-scoped RBAC와 all-namespace watch가 기본이므로 범위를 명시한다.
+# - memory 기능에 pgvector를 쓸 때만 vectorEnabled: true 로 바꾸고 external DB extension을 준비한다.
+controller:
+  replicas: 3
+  volumes:
+    - name: db-url
+      secret:
+        secretName: kagent-postgres-url
+  volumeMounts:
+    - name: db-url
+      mountPath: /var/run/secrets/kagent-db
+      readOnly: true
+
+database:
+  postgres:
+    bundled:
+      enabled: false
+    urlFile: /var/run/secrets/kagent-db/url
+    vectorEnabled: false
+
+rbac:
+  namespaces:
+    - kagent
+    - agents-lab
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [ALL]
+  readOnlyRootFilesystem: true

@@ -1,0 +1,6 @@
+# kagent-lab 9장 — generated docker-compose.yaml의 Agent service에 추가할 environment 항목.
+# 값은 shell 환경 변수에서 받고 파일에 literal로 적지 않는다.
+environment:
+  - LITELLM_MODEL=${LITELLM_MODEL}
+  - LITELLM_BASE_URL=${LITELLM_BASE_URL}
+  - LITELLM_API_KEY=${LITELLM_API_KEY}

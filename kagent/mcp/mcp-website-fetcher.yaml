@@ -1,0 +1,15 @@
+# kagent-lab 4장 — 공식 입문 예제의 fetch MCP server. kmcp MCPServer API는 v1alpha1이다.
+# uvx가 package를 받아 code로 실행하고 외부 URL에 접근하므로 전용 kind cluster에서만 쓴다.
+apiVersion: kagent.dev/v1alpha1
+kind: MCPServer
+metadata:
+  name: mcp-website-fetcher
+  namespace: kagent
+spec:
+  deployment:
+    args:
+      - mcp-server-fetch
+    cmd: uvx
+    port: 3000
+  stdioTransport: {}
+  transportType: stdio

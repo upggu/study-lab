@@ -1,0 +1,13 @@
+# kagent-lab 1장 — UI의 Fetch Models가 쓸 OpenAI-compatible provider discovery.
+# ${LITELLM_BASE_URL}은 적용 전에 shell 값으로 치환한다 (README의 sed 예시).
+# secretRef의 Secret은 data key를 정확히 하나만 가져야 한다 (kagent-litellm: LITELLM_API_KEY).
+apiVersion: kagent.dev/v1alpha2
+kind: ModelProviderConfig
+metadata:
+  name: company-litellm
+  namespace: kagent
+spec:
+  type: OpenAI
+  endpoint: ${LITELLM_BASE_URL}
+  secretRef:
+    name: kagent-litellm

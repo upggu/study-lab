@@ -1,0 +1,27 @@
+# kagent-lab 13장 — 온프렘 도입 판정 decision record template.
+# 결정문에는 chart가 제공하는 기능보다 우리 backend에서 실제로 유지할 code와 on-call 책임을 적는다.
+decision: adopt-kagent | adopt-kagent-with-limited-substrate | bare-kubernetes | defer
+date: 2026-__-__
+owners:
+  platform: ""
+  security: ""
+  application: ""
+versions:
+  kubernetes: ""
+  kagent: "0.9.9"
+  substrate: "0.0.6 or not-used"
+hardGates:
+  passed: []
+  failed: []
+evidence:
+  contractTests: ""
+  securityTests: ""
+  runtimeComparison: ""
+  upgradeRollback: ""
+  resourceAndCost: ""
+scope:
+  defaultRuntime: ""
+  sandboxEligibleAgentClasses: []
+  excludedUseCases: []
+risks: []
+revisitWhen: []

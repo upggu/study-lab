@@ -1,0 +1,29 @@
+# study realm — 단계 base
+#
+# 이 파일이 "우리 realm이 이래야 한다"는 선언이다. ./lab.sh apply base 는 keycloak-config-cli로
+# 서버를 이 파일에 맞춘다(없으면 만들고, 다르면 고치고, 이 도구가 만든 것 중 파일에서 빠지면 지운다).
+# 형식은 Keycloak realm export와 같다. Admin Console의 Realm settings → Action → Partial export 결과와
+# 필드 이름이 같으므로 콘솔·Admin REST 조회 결과와 1:1로 대조할 수 있다.
+#
+# 이 단계에 있는 것: realm 하나, 로컬 사용자 local-user. client·role·federation·IdP는 아직 없다.
+# 비밀값은 파일에 쓰지 않는다. 아래 "file:UTF-8:/run/secrets/…" 표기는 config-cli 변수 치환으로, 적용 시점에 secret 파일 내용으로 바뀐다.
+
+realm: study
+displayName: Keycloak Study Lab
+enabled: true
+sslRequired: external
+registrationAllowed: false
+resetPasswordAllowed: false
+rememberMe: false
+
+users:
+  - username: local-user
+    enabled: true
+    firstName: Local
+    lastName: User
+    email: local-user@keycloak.test
+    emailVerified: true
+    credentials:
+      - type: password
+        value: "$(file:UTF-8:/run/secrets/local-user-password)"
+        temporary: false

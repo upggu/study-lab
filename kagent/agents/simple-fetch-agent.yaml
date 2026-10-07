@@ -1,0 +1,24 @@
+# kagent-lab 4장 — mcp-website-fetcher의 fetch tool 하나만 allowlist에 넣은 Agent.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: simple-fetch-agent
+  namespace: kagent
+spec:
+  description: Fetch one explicitly supplied HTTPS page and summarize it.
+  type: Declarative
+  declarative:
+    runtime: go
+    modelConfig: default-model-config
+    systemMessage: |-
+      You summarize a webpage only after calling the fetch tool.
+      Accept only an explicit HTTPS URL from the user.
+      Do not fetch localhost, link-local, cluster-local, or private-network addresses.
+      State which URL was fetched and separate retrieved facts from your inference.
+    tools:
+      - type: McpServer
+        mcpServer:
+          kind: MCPServer
+          name: mcp-website-fetcher
+          toolNames:
+            - fetch

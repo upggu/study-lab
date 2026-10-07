@@ -1,0 +1,38 @@
+# kagent-lab 8장 — controller 8083(A2A) ingress를 승인된 backend와 UI로 제한하는 staging 예시.
+# 전제: release 이름 kagent, backend는 agent-portal namespace의 app.kubernetes.io/name=agent-backend Pod.
+# 적용 전 `kubectl -n kagent get pod --show-labels`와 실제 backend label을 비교한다.
+# kind 기본 CNI는 NetworkPolicy를 집행하지 않으므로 packet deny 검증은 policy-capable CNI나 staging에서 한다.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: controller-approved-callers
+  namespace: kagent
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: kagent
+      app.kubernetes.io/instance: kagent
+      app.kubernetes.io/component: controller
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: agent-portal
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: agent-backend
+      ports:
+        - protocol: TCP
+          port: 8083
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: kagent
+              app.kubernetes.io/instance: kagent
+              app.kubernetes.io/component: ui
+      ports:
+        - protocol: TCP
+          port: 8083
+        - protocol: TCP
+          port: 8084

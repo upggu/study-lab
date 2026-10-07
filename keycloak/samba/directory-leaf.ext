@@ -1,0 +1,6 @@
+basicConstraints = critical, CA:FALSE
+keyUsage = critical, digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = DNS:dc1.ad.keycloak.test
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid,issuer

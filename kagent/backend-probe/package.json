@@ -1,0 +1,21 @@
+{
+  "name": "kagent-backend-probe",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "kagent-lab 7·8·12장 — Node/TypeScript backend walking skeleton probe",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "probe": "tsx probe.ts",
+    "test": "node --import tsx --test policy.test.ts",
+    "compare": "tsx compare.mts"
+  },
+  "dependencies": {
+    "@kubernetes/client-node": "1.4.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0"
+  }
+}

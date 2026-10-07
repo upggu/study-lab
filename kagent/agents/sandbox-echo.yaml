@@ -1,0 +1,20 @@
+# kagent-lab 12장 — Substrate A/B fixture의 SandboxAgent 쪽. kagent-default WorkerPool의 actor로 실행된다.
+apiVersion: kagent.dev/v1alpha2
+kind: SandboxAgent
+metadata:
+  name: sandbox-echo
+  namespace: kagent
+  labels:
+    study.upggu.com/fixture: substrate-ab
+spec:
+  type: Declarative
+  description: Substrate side of the A/B fixture.
+  declarative:
+    runtime: go
+    modelConfig: default-model-config
+    systemMessage: |-
+      You are the A/B runtime fixture.
+      Answer in one short sentence and do not use tools.
+  substrate:
+    workerPoolRef:
+      name: kagent-default
