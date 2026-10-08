@@ -251,8 +251,11 @@ services:
     # keycloak-config-cli: applies realm/*.yaml through the Admin REST API. lab.sh sets
     # IMPORT_FILES_LOCATIONS to the stage file(s). Secrets referenced as $(file:UTF-8:/run/secrets/…)
     # in the YAML are mounted below; the admin password arrives via Spring's configtree.
+    # The image runs as nobody (65534). Docker Engine bind-mounts file secrets with the host owner and
+    # mode 0600, so nobody cannot read them; lab.sh passes the host uid/gid as LAB_UID/LAB_GID instead.
     image: adorsys/keycloak-config-cli:6.5.1-26.5.5@sha256:0955d98c8a341898b7aa177477edf8a1e90569ae50bbe7598141c1270b773274
     profiles: [tools]
+    user: "${LAB_UID:-65534}:${LAB_GID:-65534}"
     entrypoint: [/bin/sh, /lab/config-cli-entrypoint.sh]
     environment:
       KEYCLOAK_URL: https://keycloak.keycloak.test:30080

@@ -40,6 +40,10 @@ P/D 번호 검증 스크립트)는 제거했고 과거 실행 기록은 이력�
   BuildKit secret으로 모든 build에 mount한다. 완성 image에는 넣지 않는다. 그래서 `docker buildx`가 필요하다.
 - Samba는 `tls keyfile`이 root 소유 0600이어야 한다. Docker Engine의 file secret은 host 소유자를 유지하므로
   entrypoint가 시작마다 root 소유 복사본을 만든다.
+- 같은 이유로 keycloak-config-cli(image 기본 사용자 `nobody` 65534)는 0600 secret을 읽지 못해
+  `Could not bind properties to 'KeycloakConfigProperties'`로 실패한다. `lab.sh`가 `LAB_UID`·`LAB_GID`로 host
+  uid/gid를 넘겨 `config` service를 host 사용자로 실행한다. Colima는 mount 권한을 느슨하게 보여 줘 macOS에서는
+  드러나지 않았다. Keycloak(uid 1000)·앱(`node`, uid 1000)은 host 사용자가 uid 1000인 일반 Ubuntu에서 그대로 읽는다.
 - macOS에 Compose plugin이 없으면 `tools/compose.sh`가 checksum을 고정한 공식 standalone binary 5.5.1을
   `.state/tools/`에 받는다.
 

@@ -10,8 +10,11 @@ checks='base app-a sso api ldap groups broker'
 
 fail() { echo "$*" >&2; exit 1; }
 
+# LAB_UID/LAB_GID: the config-cli container runs as the host user so it can read the 0600 file secrets
+# (Docker Engine keeps the host owner on bind-mounted secrets; the image's default user is nobody).
 compose() {
-  "$lab_directory/tools/compose.sh" --project-name "$project_name" --file "$lab_directory/compose.yaml" "$@"
+  LAB_UID=$(id -u) LAB_GID=$(id -g) \
+    "$lab_directory/tools/compose.sh" --project-name "$project_name" --file "$lab_directory/compose.yaml" "$@"
 }
 
 require_docker() {

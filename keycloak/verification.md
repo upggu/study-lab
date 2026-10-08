@@ -37,11 +37,20 @@ Keycloak 26.5.5, keycloak-config-cli 6.5.1-26.5.5, PostgreSQL 18.6, Samba 4.19.5
 - 로그인 검사의 오답 비밀번호 확인이 새 cookie jar로 POST해 Keycloak auth session을 잃었다. 같은 jar를 쓰도록 고쳤다.
 - `kc_idp_hint`가 붙은 요청은 Keycloak이 303으로 상대 IdP로 보낸다. 검사가 로그인 폼까지 redirect를 따라가게 했다.
 
+## 2026-10-08 회사 프록시 뒤 Ubuntu + Docker Engine (부분)
+
+TLS 재서명 proxy 뒤의 Ubuntu에서 `CORP_CA_FILE`을 지정한 `./lab.sh up`이 통과했다(image pull·두 build·세 service healthy).
+이어진 `./lab.sh apply base`는 keycloak-config-cli가 `Could not bind properties to 'KeycloakConfigProperties'`로
+실패했다. 원인은 config-cli image가 `nobody`(65534)로 실행되는데 Docker Engine이 file secret을 host 소유자·0600
+그대로 bind mount해 `/run/config-cli/keycloak.password`를 읽지 못한 것이다. Colima는 mount 권한을 느슨하게 보여
+줘 macOS에서는 드러나지 않았다. `lab.sh`가 `LAB_UID`·`LAB_GID`로 host uid/gid를 넘겨 `config` service를 host
+사용자로 실행하도록 고쳤고, macOS(uid 501)에서 `up` → `apply broker`(재적용) → `verify broker` 통과를 확인했다.
+Ubuntu에서 `apply base` 이후 단계 재확인은 아직이다.
+
 ## 미실행
 
-- **네이티브 Ubuntu 24.04 + rootful Docker Engine**: 같은 `lab.sh`로 설계했지만 이번 개편에서 실행하지 않았다.
-  재개 명령은 `./lab.sh up` 부터 README의 단계 순서 그대로다. 확인할 차이는 Samba TLS key의 root 소유 복사,
-  `docker-compose-plugin`·`docker-buildx-plugin` 존재, 프록시 환경의 `CORP_CA_FILE` build다.
+- **네이티브 Ubuntu 24.04 + rootful Docker Engine**: 위 부분 기록 뒤 `apply base`부터 README의 단계 순서 그대로
+  재확인이 남았다. 확인할 차이는 Samba TLS key의 root 소유 복사와 config-cli의 host 사용자 실행이다.
 - **브라우저 재확인**: 이전 구조에서 macOS Chrome으로 Admin Console·Account Console·앱 A 로그인을 확인한 기록이
   있다. 개편 뒤 Chrome 재확인과 `partner-idp` 로그인 버튼 화면 확인은 하지 않았다. Ubuntu NSS DB 등록도 미실행이다.
 - Microsoft AD DS, 실제 AD FS, SAML brokering, 운영 HA는 범위 밖이다.
